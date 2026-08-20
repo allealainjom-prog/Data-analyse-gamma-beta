@@ -124,11 +124,13 @@ def parse_phd_from_text(text):
     return data
 
 # Functie om histogram te normaliseren en te berekenen voor g-diagram
-def compute_normalized_sums_for_files(parsed_list, energy_threshold_kev=300):
+# Now supports an energy range (min,max) instead of a single threshold
+def compute_normalized_sums_for_files(parsed_list, energy_range_kev=(0, 300)):
+    energy_min_kev, energy_max_kev = energy_range_kev
     collection_datetimes = []
     normalized_sums_total = []
-    normalized_sums_below_threshold = []
-    normalized_sums_above_threshold = []
+    normalized_sums_in_range = []
+    normalized_sums_outside_range = []
 
     for data in parsed_list:
         if not data['histogram']:
@@ -152,22 +154,26 @@ def compute_normalized_sums_for_files(parsed_list, energy_threshold_kev=300):
         total_histogram_sum = np.sum(hist_array)
         normalized_sums_total.append(total_histogram_sum / normalization_factor)
         if not data['g_spectrum'] or not data['g_energy_cal']:
-            normalized_sums_below_threshold.append(0.0)
-            normalized_sums_above_threshold.append(0.0)
+            normalized_sums_in_range.append(0.0)
+            normalized_sums_outside_range.append(0.0)
         else:
             g_coeffs = fit_energy_calibration(data['g_energy_cal'])
             g_spectrum_arr = np.array(data['g_spectrum'])
             g_channels = np.arange(len(g_spectrum_arr))
             g_energies = energie_functie(g_channels, *g_coeffs)
             if len(g_energies) == 0:
-                channel_idx_threshold = 0
+                start_idx = 0
+                end_idx = 0
             else:
-                closest_idx = np.argmin(np.abs(g_energies - energy_threshold_kev))
-                channel_idx_threshold = closest_idx if g_energies[closest_idx] >= energy_threshold_kev else closest_idx + 1
-            sum_below_threshold = np.sum(g_spectrum_arr[:channel_idx_threshold])
-            sum_above_threshold = np.sum(g_spectrum_arr[channel_idx_threshold:])
-            normalized_sums_below_threshold.append(sum_below_threshold / normalization_factor)
-            normalized_sums_above_threshold.append(sum_above_threshold / normalization_factor)
+                # find closest channel indices for min and max energies
+                idx_min = int(np.argmin(np.abs(g_energies - energy_min_kev)))
+                idx_max = int(np.argmin(np.abs(g_energies - energy_max_kev)))
+                start_idx = min(idx_min, idx_max)
+                end_idx = max(idx_min, idx_max) + 1
+            sum_in_range = np.sum(g_spectrum_arr[start_idx:end_idx])
+            sum_outside = np.sum(g_spectrum_arr[:start_idx]) + np.sum(g_spectrum_arr[end_idx:])
+            normalized_sums_in_range.append(sum_in_range / normalization_factor)
+            normalized_sums_outside_range.append(sum_outside / normalization_factor)
         collection_datetimes.append(data['collection_start_datetime'])
 
     if not collection_datetimes:
@@ -175,8 +181,8 @@ def compute_normalized_sums_for_files(parsed_list, energy_threshold_kev=300):
     df = pd.DataFrame({
         'Collection Datetime': collection_datetimes,
         'Normalized Sum (Total)': normalized_sums_total,
-        'Normalized Sum (Below Threshold)': normalized_sums_below_threshold,
-        'Normalized Sum (Above Threshold)': normalized_sums_above_threshold
+        'Normalized Sum (In Range)': normalized_sums_in_range,
+        'Normalized Sum (Outside Range)': normalized_sums_outside_range
     })
     df = df.sort_values(by='Collection Datetime').reset_index(drop=True)
     return df
@@ -187,8 +193,8 @@ st.title('Data-analyse gamma-beta')
 st.markdown('Upload één of meerdere .PHD-bestanden. Eén bestand → coïncidentiespectrum; meerdere bestanden → g-diagrammen.')
 
 uploaded_files = st.file_uploader('Upload .PHD bestanden', type=['PHD', 'phd', 'PHD.txt'], accept_multiple_files=True)
-# Allow energy threshold from 0 to 2000 keV with step 1
-energy_threshold = st.sidebar.slider('Energie drempel (keV) voor g-diagrammen', min_value=0, max_value=2000, value=300, step=1)
+# Range slider for energy (min,max) from 0 to 2000 keV
+energy_range = st.sidebar.slider('Energie bereik (keV) voor g-diagrammen', min_value=0, max_value=2000, value=(0, 300), step=1)
 show_dummy = st.sidebar.checkbox('Toon demo met gegenereerde dummy bestanden', value=False)
 
 parsed_files = []
@@ -291,7 +297,7 @@ else:
             st.warning('Geen histogramdata gevonden in het bestand.')
     else:
         st.subheader('G-diagrammen voor meerdere bestanden')
-        df = compute_normalized_sums_for_files(parsed_files, energy_threshold_kev=energy_threshold)
+        df = compute_normalized_sums_for_files(parsed_files, energy_range_kev=energy_range)
         if df is None:
             st.warning('Geen geldige datapunten gevonden om g-diagrammen te maken.')
         else:
@@ -305,22 +311,22 @@ else:
             fig.autofmt_xdate()
             st.pyplot(fig)
 
-            # Below threshold
+            # In-range
             fig2, ax2 = plt.subplots(figsize=(10, 4))
-            ax2.plot(df['Collection Datetime'], df['Normalized Sum (Below Threshold)'], marker='o', linestyle='-', color='green')
-            ax2.set_title(f'G-diagram: Genormaliseerde Som van Coïncidenties < {energy_threshold} keV')
+            ax2.plot(df['Collection Datetime'], df['Normalized Sum (In Range)'], marker='o', linestyle='-', color='green')
+            ax2.set_title(f'G-diagram: Genormaliseerde Som van Coïncidenties binnen {energy_range[0]}–{energy_range[1]} keV')
             ax2.set_xlabel('Collectiestartdatum en -tijd')
-            ax2.set_ylabel('Genormaliseerde Som (Counts < drempel)')
+            ax2.set_ylabel('Genormaliseerde Som (Counts binnen bereik)')
             ax2.grid(True)
             fig2.autofmt_xdate()
             st.pyplot(fig2)
 
-            # Above threshold
+            # Outside-range
             fig3, ax3 = plt.subplots(figsize=(10, 4))
-            ax3.plot(df['Collection Datetime'], df['Normalized Sum (Above Threshold)'], marker='o', linestyle='-', color='red')
-            ax3.set_title(f'G-diagram: Genormaliseerde Som van Coïncidenties > {energy_threshold} keV')
+            ax3.plot(df['Collection Datetime'], df['Normalized Sum (Outside Range)'], marker='o', linestyle='-', color='red')
+            ax3.set_title(f'G-diagram: Genormaliseerde Som van Coïncidenties buiten {energy_range[0]}–{energy_range[1]} keV')
             ax3.set_xlabel('Collectiestartdatum en -tijd')
-            ax3.set_ylabel('Genormaliseerde Som (Counts > drempel)')
+            ax3.set_ylabel('Genormaliseerde Som (Counts buiten bereik)')
             ax3.grid(True)
             fig3.autofmt_xdate()
             st.pyplot(fig3)

@@ -1,0 +1,11 @@
+version: '3.8'
+services:
+  streamlit-app:
+    build: .
+    ports:
+      - "8501:8501"
+    restart: unless-stopped
+    # Voor ontwikkeling gebruik: - ./:/app
+    # Voor productie: verwijder volumes of maak read-only: - ./:/app:ro
+    volumes:
+      - ./:/app:ro

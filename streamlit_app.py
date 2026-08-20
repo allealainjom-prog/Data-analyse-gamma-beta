@@ -187,7 +187,8 @@ st.title('Data-analyse gamma-beta')
 st.markdown('Upload één of meerdere .PHD-bestanden. Eén bestand → coïncidentiespectrum; meerdere bestanden → g-diagrammen.')
 
 uploaded_files = st.file_uploader('Upload .PHD bestanden', type=['PHD', 'phd', 'PHD.txt'], accept_multiple_files=True)
-energy_threshold = st.sidebar.slider('Energie drempel (keV) voor g-diagrammen', min_value=50, max_value=2000, value=300, step=10)
+# Allow energy threshold from 0 to 2000 keV with step 1
+energy_threshold = st.sidebar.slider('Energie drempel (keV) voor g-diagrammen', min_value=0, max_value=2000, value=300, step=1)
 show_dummy = st.sidebar.checkbox('Toon demo met gegenereerde dummy bestanden', value=False)
 
 parsed_files = []

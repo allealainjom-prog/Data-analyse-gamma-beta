@@ -124,7 +124,7 @@ def parse_phd_from_text(text):
     return data
 
 # Functie om histogram te normaliseren en te berekenen voor g-diagram
-# Now supports an energy range (min,max) instead of a single threshold
+# Gefilterd op WERKELIJKE gammastraling-energieën (via g_energy_cal)
 def compute_normalized_sums_for_files(parsed_list, energy_range_kev=(0, 300)):
     energy_min_kev, energy_max_kev = energy_range_kev
     collection_datetimes = []
@@ -146,34 +146,47 @@ def compute_normalized_sums_for_files(parsed_list, energy_range_kev=(0, 300)):
         normalization_factor = (data['air_volume'] * collection_duration_hours * data['xenon_volume'])
         if normalization_factor == 0:
             continue
+        
         hist_array = np.array(data['histogram'])
         try:
             hist_array = hist_array.reshape((256, 256))
         except Exception:
             continue
+        
         total_histogram_sum = np.sum(hist_array)
         normalized_sums_total.append(total_histogram_sum / normalization_factor)
+        
+        # KRITIEK: Filter de 2D histogram op WERKELIJKE gamma-energieën
         if not data['g_spectrum'] or not data['g_energy_cal']:
+            # Geen energie-kalibratie beschikbaar → kan niet filteren
             normalized_sums_in_range.append(0.0)
             normalized_sums_outside_range.append(0.0)
         else:
+            # Bepaal gamma-energie-kalibratie
             g_coeffs = fit_energy_calibration(data['g_energy_cal'])
             g_spectrum_arr = np.array(data['g_spectrum'])
             g_channels = np.arange(len(g_spectrum_arr))
             g_energies = energie_functie(g_channels, *g_coeffs)
+            
             if len(g_energies) == 0:
                 start_idx = 0
                 end_idx = 0
             else:
-                # find closest channel indices for min and max energies
+                # Vind kanaal-indices voor min en max energieën
                 idx_min = int(np.argmin(np.abs(g_energies - energy_min_kev)))
                 idx_max = int(np.argmin(np.abs(g_energies - energy_max_kev)))
                 start_idx = min(idx_min, idx_max)
                 end_idx = max(idx_min, idx_max) + 1
-            sum_in_range = np.sum(g_spectrum_arr[start_idx:end_idx])
-            sum_outside = np.sum(g_spectrum_arr[:start_idx]) + np.sum(g_spectrum_arr[end_idx:])
-            normalized_sums_in_range.append(sum_in_range / normalization_factor)
-            normalized_sums_outside_range.append(sum_outside / normalization_factor)
+            
+            # REPARATIE: Histogram filteren langs gamma-kanalen (X-as)
+            # hist_array[i, j] = histogram[gamma_kanaal=i, beta_kanaal=j]
+            # We sommeren over ALLE beta-kanalen (j), maar alleen gamma-kanalen in bereik (i)
+            hist_in_range = np.sum(hist_array[start_idx:end_idx, :])
+            hist_outside_range = np.sum(hist_array[:start_idx, :]) + np.sum(hist_array[end_idx:, :])
+            
+            normalized_sums_in_range.append(hist_in_range / normalization_factor)
+            normalized_sums_outside_range.append(hist_outside_range / normalization_factor)
+        
         collection_datetimes.append(data['collection_start_datetime'])
 
     if not collection_datetimes:
@@ -345,6 +358,12 @@ else:
                 st.warning('Geen histogramdata gevonden in het bestand.')
     else:
         st.subheader('G-diagrammen voor meerdere bestanden')
+        st.markdown(f"""
+        **Energiebereik:** {energy_range[0]}–{energy_range[1]} keV  
+        **Let op:** G-diagrammen zijn nu gefilterd op werkelijke **gammastraling-energieën** 
+        (via g_energy_cal). De "In Range" en "Outside Range" waardes zijn gebaseerd op 
+        de energiegebaseerde filtering van het coïncidentie-histogram.
+        """)
         df = compute_normalized_sums_for_files(parsed_files, energy_range_kev=energy_range)
         if df is None:
             st.warning('Geen geldige datapunten gevonden om g-diagrammen te maken.')
@@ -352,7 +371,7 @@ else:
             # Plot totale genormaliseerde som
             fig, ax = plt.subplots(figsize=(10, 4))
             ax.plot(df['Collection Datetime'], df['Normalized Sum (Total)'], marker='o', linestyle='-', color='blue')
-            ax.set_title('G-diagram: Totale Genormaliseerde Som van Coïncidenties')
+            ax.set_title('G-diagram: Totale Genormaliseerde Som van Coïncidenties (ongefiltered)')
             ax.set_xlabel('Collectiestartdatum en -tijd')
             ax.set_ylabel('Genormaliseerde Som')
             ax.grid(True)
@@ -362,9 +381,9 @@ else:
             # In-range
             fig2, ax2 = plt.subplots(figsize=(10, 4))
             ax2.plot(df['Collection Datetime'], df['Normalized Sum (In Range)'], marker='o', linestyle='-', color='green')
-            ax2.set_title(f'G-diagram: Genormaliseerde Som van Coïncidenties binnen {energy_range[0]}–{energy_range[1]} keV')
+            ax2.set_title(f'G-diagram: Genormaliseerde Som van Coïncidenties binnen {energy_range[0]}–{energy_range[1]} keV (gammaenergie)')
             ax2.set_xlabel('Collectiestartdatum en -tijd')
-            ax2.set_ylabel('Genormaliseerde Som (Counts binnen bereik)')
+            ax2.set_ylabel('Genormaliseerde Som (Counts in bereik)')
             ax2.grid(True)
             fig2.autofmt_xdate()
             st.pyplot(fig2)
@@ -372,7 +391,7 @@ else:
             # Outside-range
             fig3, ax3 = plt.subplots(figsize=(10, 4))
             ax3.plot(df['Collection Datetime'], df['Normalized Sum (Outside Range)'], marker='o', linestyle='-', color='red')
-            ax3.set_title(f'G-diagram: Genormaliseerde Som van Coïncidenties buiten {energy_range[0]}–{energy_range[1]} keV')
+            ax3.set_title(f'G-diagram: Genormaliseerde Som van Coïncidenties buiten {energy_range[0]}–{energy_range[1]} keV (gammaenergie)')
             ax3.set_xlabel('Collectiestartdatum en -tijd')
             ax3.set_ylabel('Genormaliseerde Som (Counts buiten bereik)')
             ax3.grid(True)

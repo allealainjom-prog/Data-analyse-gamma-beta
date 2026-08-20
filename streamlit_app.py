@@ -193,8 +193,17 @@ st.title('Data-analyse gamma-beta')
 st.markdown('Upload één of meerdere .PHD-bestanden. Eén bestand → coïncidentiespectrum; meerdere bestanden → g-diagrammen.')
 
 uploaded_files = st.file_uploader('Upload .PHD bestanden', type=['PHD', 'phd', 'PHD.txt'], accept_multiple_files=True)
-# Range slider for energy (min,max) from 0 to 2000 keV
-energy_range = st.sidebar.slider('Energie bereik (keV) voor g-diagrammen', min_value=0, max_value=2000, value=(0, 300), step=1)
+# Replace slider with two number inputs so users can type min and max
+# Two separate number inputs for min and max energy (keV)
+energy_min = st.sidebar.number_input('Energie min (keV) voor g-diagrammen', min_value=0, max_value=2000, value=0, step=1)
+energy_max = st.sidebar.number_input('Energie max (keV) voor g-diagrammen', min_value=0, max_value=2000, value=300, step=1)
+# If the user accidentally sets min > max, swap them for processing but inform the user
+if energy_min > energy_max:
+    st.sidebar.warning('Min is groter dan max — waarden worden omgewisseld voor verwerking')
+    energy_range = (int(energy_max), int(energy_min))
+else:
+    energy_range = (int(energy_min), int(energy_max))
+
 show_dummy = st.sidebar.checkbox('Toon demo met gegenereerde dummy bestanden', value=False)
 
 parsed_files = []

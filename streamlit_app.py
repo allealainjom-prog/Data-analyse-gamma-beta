@@ -248,6 +248,7 @@ if show_dummy and not uploaded_files:
 if not parsed_files:
     st.info('Upload een of meerdere .PHD-bestanden of schakel demo-modus in.')
 else:
+    # --- SINGLE FILE VIEW: show gamma, beta and coincidence spectra in three columns ---
     if len(parsed_files) == 1:
         data = parsed_files[0]
         st.subheader('Coïncidentiespectrum en metadata')
@@ -256,45 +257,83 @@ else:
         st.write('Luchtvolume (m3):', data.get('air_volume'))
         st.write('Xenonvolume (m3):', data.get('xenon_volume'))
 
-        # Toon g_spectrum (energie-gekalibreerd als mogelijk)
-        if data['g_spectrum']:
-            g_spectrum_arr = np.array(data['g_spectrum'])
-            g_channels = np.arange(len(g_spectrum_arr))
-            if data['g_energy_cal']:
-                coeffs = fit_energy_calibration(data['g_energy_cal'])
-                g_energies = energie_functie(g_channels, *coeffs)
-                fig, ax = plt.subplots(figsize=(8, 4))
-                ax.plot(g_energies, g_spectrum_arr, drawstyle='steps-mid')
-                ax.set_xlabel('Energie (keV)')
-                ax.set_ylabel('Counts')
-                ax.set_title('G-spectrum (gekalibreerd)')
-                ax.grid(True)
-                st.pyplot(fig)
-            else:
-                fig, ax = plt.subplots(figsize=(8, 4))
-                ax.plot(g_channels, g_spectrum_arr, drawstyle='steps-mid')
-                ax.set_xlabel('Kanaal')
-                ax.set_ylabel('Counts')
-                ax.set_title('G-spectrum (kanaal)')
-                ax.grid(True)
-                st.pyplot(fig)
-        else:
-            st.warning('Geen G-spectrum gevonden in het bestand.')
+        # Maak drie kolommen: gamma | beta | coincidentie
+        col_g, col_b, col_h = st.columns([1, 1, 1.2])
 
-        # Toon 2D coïncidentie histogram (als 256x256 kan worden gemaakt)
-        if data['histogram']:
-            hist_array = np.array(data['histogram'])
-            try:
-                hist_array = hist_array.reshape((256, 256))
-                fig2, ax2 = plt.subplots(figsize=(6, 6))
-                cax = ax2.imshow(hist_array, origin='lower', cmap='inferno', aspect='auto')
-                ax2.set_title('Coïncidentie-histogram (256x256)')
-                fig2.colorbar(cax, ax=ax2)
-                st.pyplot(fig2)
-            except Exception:
-                st.warning('Histogram kon niet naar 256x256 gereshaped worden.')
-        else:
-            st.warning('Geen histogramdata gevonden in het bestand.')
+        # --- GAMMA SPECTRUM ---
+        with col_g:
+            st.markdown("**Gammaspectrum**")
+            if data['g_spectrum']:
+                g_spectrum_arr = np.array(data['g_spectrum'])
+                g_channels = np.arange(len(g_spectrum_arr))
+                if data['g_energy_cal']:
+                    coeffs = fit_energy_calibration(data['g_energy_cal'])
+                    g_energies = energie_functie(g_channels, *coeffs)
+                    fig_g, ax_g = plt.subplots(figsize=(6, 3.5))
+                    ax_g.step(g_energies, g_spectrum_arr, where='mid')
+                    ax_g.set_xlabel('Energie (keV)')
+                    ax_g.set_ylabel('Counts')
+                    ax_g.set_title('G-spectrum (gekalibreerd)')
+                    ax_g.grid(True)
+                    st.pyplot(fig_g)
+                else:
+                    fig_g, ax_g = plt.subplots(figsize=(6, 3.5))
+                    ax_g.step(g_channels, g_spectrum_arr, where='mid')
+                    ax_g.set_xlabel('Kanaal')
+                    ax_g.set_ylabel('Counts')
+                    ax_g.set_title('G-spectrum (kanaal)')
+                    ax_g.grid(True)
+                    st.pyplot(fig_g)
+            else:
+                st.warning('Geen G-spectrum gevonden in het bestand.')
+
+        # --- BETA SPECTRUM ---
+        with col_b:
+            st.markdown("**Betaspectrum**")
+            if data['b_spectrum']:
+                b_spectrum_arr = np.array(data['b_spectrum'])
+                b_channels = np.arange(len(b_spectrum_arr))
+                # probeer b-calibratie als aanwezig
+                if data.get('b_energy_cal'):
+                    try:
+                        b_coeffs = fit_energy_calibration(data['b_energy_cal'])
+                    except Exception:
+                        b_coeffs = (0.0, 1.0, 0.0)
+                    b_energies = energie_functie(b_channels, *b_coeffs)
+                    fig_b, ax_b = plt.subplots(figsize=(6, 3.5))
+                    ax_b.step(b_energies, b_spectrum_arr, where='mid')
+                    ax_b.set_xlabel('Energie (keV)')
+                    ax_b.set_ylabel('Counts')
+                    ax_b.set_title('B-spectrum (gekalibreerd)')
+                    ax_b.grid(True)
+                    st.pyplot(fig_b)
+                else:
+                    fig_b, ax_b = plt.subplots(figsize=(6, 3.5))
+                    ax_b.step(b_channels, b_spectrum_arr, where='mid')
+                    ax_b.set_xlabel('Kanaal')
+                    ax_b.set_ylabel('Counts')
+                    ax_b.set_title('B-spectrum (kanaal)')
+                    ax_b.grid(True)
+                    st.pyplot(fig_b)
+            else:
+                st.warning('Geen B-spectrum gevonden in het bestand.')
+
+        # --- COINCIDENTIE HISTOGRAM (2D) ---
+        with col_h:
+            st.markdown("**Coïncidentie-histogram (2D)**")
+            if data['histogram']:
+                hist_array = np.array(data['histogram'])
+                try:
+                    hist_array = hist_array.reshape((256, 256))
+                    fig_h, ax_h = plt.subplots(figsize=(5.5, 5.0))
+                    cax = ax_h.imshow(hist_array, origin='lower', cmap='inferno', aspect='auto')
+                    ax_h.set_title('Coïncidentie-histogram (256x256)')
+                    fig_h.colorbar(cax, ax=ax_h, fraction=0.046, pad=0.04)
+                    st.pyplot(fig_h)
+                except Exception:
+                    st.warning('Histogram kon niet naar 256x256 gereshaped worden.')
+            else:
+                st.warning('Geen histogramdata gevonden in het bestand.')
     else:
         st.subheader('G-diagrammen voor meerdere bestanden')
         df = compute_normalized_sums_for_files(parsed_files, energy_range_kev=energy_range)
